@@ -219,6 +219,9 @@ if (CXX_ICC)
         add_compile_options($<$<COMPILE_LANGUAGE:C,CXX>:/fp:precise>)
     else()
         add_compile_options($<$<COMPILE_LANGUAGE:C,CXX>:-fp-model=precise>)
+        # icpx links Intel's math and SVML libraries dynamically whenever the optimizer uses them;
+        # link them statically so the binaries run on machines without oneAPI installed.
+        add_link_options(-static-intel)
     endif()
 
     # icx-cl links Intel's math and SVML runtimes as DLLs; ship them next to the executables.
