@@ -551,4 +551,40 @@ if (ENABLE_NVIDIA_DLSS)
     message(STATUS "NVIDIA DLSS through Streamline: ${STREAMLINE_INCLUDE_DIR}")
 endif()
 
+# Intel XeSS super resolution in place of a game's DLSS (after NVIDIA DLSS, before FSR 3.1) when
+# the setting is on. The SDK's headers are compiled in and its redistributable libxess.dll (Intel
+# Simplified Software License; see LICENSE-XeSS.txt next to it) is copied next to the executables.
+# It is loaded at run time, so a build or a PC without it falls back to FSR 3.1. Intel ships the
+# library for Windows only; elsewhere the option only compiles the code.
+if (WIN32 AND ARCHITECTURE_x86_64)
+    set(XESS_DEFAULT ON)
+else()
+    set(XESS_DEFAULT OFF)
+endif()
+option(ENABLE_INTEL_XESS "Enable Intel XeSS super resolution" ${XESS_DEFAULT})
+set(EGLANTINE_XESS_SDK "" CACHE PATH "Intel XeSS SDK directory (empty: download it)")
+if (ENABLE_INTEL_XESS)
+    if (EGLANTINE_XESS_SDK)
+        set(XESS_SDK_DIR "${EGLANTINE_XESS_SDK}")
+    else()
+        AddJsonPackage(NAME xess DOWNLOAD_ONLY)
+        set(XESS_SDK_DIR "${xess_SOURCE_DIR}")
+    endif()
+    target_sources(video_core PRIVATE
+        renderer_vulkan/vk_xess_upscaler.cpp
+        renderer_vulkan/vk_xess_upscaler.h
+        vulkan_common/xess.cpp
+        vulkan_common/xess.h
+    )
+    target_include_directories(video_core SYSTEM PRIVATE "${XESS_SDK_DIR}/inc")
+    target_compile_definitions(video_core PUBLIC EGLANTINE_XESS)
+    configure_file("${XESS_SDK_DIR}/LICENSE.txt" "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/LICENSE-XeSS.txt" COPYONLY)
+    install(FILES "${XESS_SDK_DIR}/LICENSE.txt" RENAME LICENSE-XeSS.txt TYPE BIN)
+    if (WIN32)
+        file(COPY "${XESS_SDK_DIR}/bin/libxess.dll" DESTINATION "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
+        install(FILES "${XESS_SDK_DIR}/bin/libxess.dll" TYPE BIN)
+    endif()
+    message(STATUS "Intel XeSS: ${XESS_SDK_DIR}")
+endif()
+
 create_target_directory_groups(video_core)

@@ -8,6 +8,7 @@ on:
   push:
     branches:
       - oneapi-icx-build
+      - intel-xess
 
 permissions:
   contents: read

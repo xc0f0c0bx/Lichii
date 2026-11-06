@@ -224,6 +224,11 @@ public:
         return false;
     }
 
+    /// Whether Intel XeSS (the "Use Intel XeSS" setting) would draw a game's DLSS evaluation.
+    [[nodiscard]] virtual bool UsesIntelXess() const {
+        return false;
+    }
+
     /// Whether ProbeGameDlssOutput checks anything on this backend.
     [[nodiscard]] virtual bool CanProbeGameDlssOutput() const {
         return false;

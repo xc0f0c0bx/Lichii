@@ -354,6 +354,12 @@
         "repo": "herumi/xbyak",
         "version": "v7.40.1"
     },
+    "xess": {
+        "artifact": "XeSS_SDK_3.0.2.zip",
+        "hash": "cadfc4b5a3c87851befbb78c701502c7b5f0f35219c76abd1d497fda8ffc63e969f35a9f8e53bc1df28c26ace69f9f0f3260c7167435898516df1e5f9ddafd79",
+        "repo": "intel/xess",
+        "version": "v3.0.2"
+    },
     "zbic": {
         "hash": "fbe2f37986377d7f0d96ae3224c80b5971df6e8b6961f68061f1975ebb2e8cb78f07b90f014b007be4023dbf5513581504e7f7d61a5237cb2a8a7a61ae11e482",
         "repo": "kinnay/zbic",

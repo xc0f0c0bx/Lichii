@@ -162,6 +162,14 @@ std::unique_ptr<TranslationMap> InitializeTranslations(QObject* parent) {
               "download button below.\nCurrently requires Fire Emblem: Fortune's Weave and "
               "EDEN_NX2_DLSS_REPLACEMENT=dlss. Without that override, its spatial workaround "
               "remains active.\nTakes effect when a game starts."));
+    INSERT(Settings, intel_xess, tr("Use Intel XeSS in place of a game's DLSS (experimental)"),
+           tr("Uses Intel XeSS super resolution in place of a Switch 2 game's own DLSS, instead "
+              "of AMD FSR 3.1. Best on Intel Arc GPUs, where it runs on their XMX units; other "
+              "GPUs use its DP4a path.\nNVIDIA DLSS, when turned on and available, still comes "
+              "first. Lichii ships Intel's libxess.dll next to the executable.\nCurrently "
+              "requires Fire Emblem: Fortune's Weave and EDEN_NX2_DLSS_REPLACEMENT=xess. Without "
+              "that override, its spatial workaround remains active.\nTakes effect when a game "
+              "starts."));
     INSERT(Settings, anti_aliasing, tr("Anti-Aliasing Method:"),
            tr("The anti-aliasing method to use.\nSMAA offers the best quality.\nFXAA "
               "can produce a more stable picture in lower resolutions."));

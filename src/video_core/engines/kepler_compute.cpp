@@ -667,9 +667,12 @@ VideoCore::GameDlssReason KeplerCompute::GameDlssBlocker() const {
         (!forced_native && !Settings::values.game_dlss_network.GetValue())) {
         return GameDlssReason::TurnedOff;
     }
-    // NVIDIA DLSS, when turned on and running, comes first.
+    // NVIDIA DLSS, then Intel XeSS, when turned on and running, come first.
     if (rasterizer->UsesNvidiaDlss()) {
         return GameDlssReason::NvidiaDlss;
+    }
+    if (rasterizer->UsesIntelXess()) {
+        return GameDlssReason::IntelXess;
     }
     const auto& scale = Settings::values.resolution_info;
     if (scale.up_scale != 1 || scale.down_shift != 0) {

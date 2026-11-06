@@ -23,6 +23,9 @@
 #include <string>
 #include "video_core/vulkan_common/streamline.h"
 #endif
+#ifdef EGLANTINE_XESS
+#include "video_core/vulkan_common/xess.h"
+#endif
 
 namespace Vulkan {
 namespace {
@@ -93,6 +96,20 @@ namespace {
     static std::vector<std::string> streamline;
     streamline = Streamline::InstanceExtensions();
     for (const std::string& name : streamline) {
+        const bool available = std::ranges::any_of(properties, [&](const VkExtensionProperties& p) {
+            return name == p.extensionName;
+        });
+        const bool listed = std::ranges::any_of(extensions, [&](const char* e) { return name == e; });
+        if (available && !listed) {
+            extensions.push_back(name.c_str());
+        }
+    }
+#endif
+#ifdef EGLANTINE_XESS
+    // What Intel XeSS asks for, where available. Static for the same reason.
+    static std::vector<std::string> xess;
+    xess = Xess::InstanceExtensions();
+    for (const std::string& name : xess) {
         const bool available = std::ranges::any_of(properties, [&](const VkExtensionProperties& p) {
             return name == p.extensionName;
         });

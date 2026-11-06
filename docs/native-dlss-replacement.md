@@ -1,8 +1,8 @@
 # Game-DLSS replacement
 
 The Vulkan renderer can replace a recognized game-DLSS evaluation with NVIDIA DLSS on
-Windows, then AMD FSR 3.1.4 if NVIDIA DLSS is disabled or unavailable. FSR uses AMD's
-eight temporal-upscaling passes, including depth, motion, history and optional RCAS.
+Windows, then Intel XeSS on Windows, then AMD FSR 3.1.4 if those are disabled or unavailable.
+FSR uses AMD's eight temporal-upscaling passes, including depth, motion, history and optional RCAS.
 This is separate from the presentation filters that scale the finished window image.
 
 Fire Emblem uses the jitter-only spatial workaround by default. Explicit `fsr` and `dlss`
@@ -50,6 +50,28 @@ does not select Fire Emblem's intercepted dispatch. The RCAS sharpness setting c
 and fallback sharpening. NVIDIA model-selection overrides
 from the upstream implementation remain available for diagnostic comparisons.
 
+## Intel XeSS
+
+"Use Intel XeSS in place of a game's DLSS" defaults to off and takes effect when the game
+starts. It runs after NVIDIA DLSS (which wins when both are on and available) and before FSR
+3.1. XeSS super resolution uses the XMX units of Intel Arc GPUs; on other vendors it runs its
+DP4a path, so it is mainly worth turning on for Arc. `EDEN_NX2_DLSS_REPLACEMENT=xess` selects
+temporal replacement and forces XeSS over NVIDIA DLSS; `fsr` and `dlss` skip it.
+
+The backend (`renderer_vulkan/vk_xess_upscaler.cpp`) hands XeSS the same inputs as the other
+two: jittered linear colour, reversed depth (`XESS_INIT_FLAG_INVERTED_DEPTH`) and render-size
+motion vectors scaled to pixels, with XeSS's auto exposure. The quality setting is the one whose
+input range holds the render size. `EDEN_NX2_XESS_MV_SCALE` and `EDEN_NX2_XESS_JITTER_SCALE`
+(default 1; -1 flips a convention), `EDEN_NX2_XESS_AUTO_EXPOSURE=0` and `EDEN_NX2_XESS_LDR=1`
+are for A/B runs. A failed initialization or evaluation clears that frame's output and makes
+later evaluations fall back to FSR 3.1.
+
+`vulkan_common/xess.cpp` loads `libxess.dll` from `EDEN_XESS_DIR`, the executable's folder or
+its `xess` subfolder before the Vulkan instance is created, and asks XeSS for the instance
+version, instance and device extensions and device features it needs (the device is created with
+them). Intel ships the library for Windows only; the code compiles elsewhere so it is checked on
+every platform, and XeSS reports itself unavailable there.
+
 ## Build and distribution
 
 FSR needs no external runtime. Keep `externals/FidelityFX-SDK/LICENSE.txt` and its attribution
@@ -64,6 +86,13 @@ headers. MSVC x86_64 builds enable `ENABLE_NVIDIA_DLSS` by default and fetch the
 `-DEGLANTINE_STREAMLINE_SDK=<header-root>` selects a local copy. This adds Windows
 `version`, `wintrust` and `crypt32` libraries, not NVIDIA import libraries. Retain Streamline's
 MIT `license.txt` in the packaged notices.
+
+For Intel XeSS, Windows x86_64 builds enable `ENABLE_INTEL_XESS` by default and fetch the
+XeSS SDK 3.0.2 release zip (`cpmfile.json`, `xess`); `-DEGLANTINE_XESS_SDK=<sdk-root>` selects a
+local copy. The SDK's headers are compiled in and its `bin/libxess.dll` is copied next to the
+executables and installed with them, as the Intel Simplified Software License allows for the
+unmodified binary; its text ships as `LICENSE-XeSS.txt` next to the executables and must stay
+with distributions. Nothing of Intel's is linked: the library is resolved at run time.
 
 Do not bundle NVIDIA's proprietary DLLs. The Graphics panel obtains missing files from
 NVIDIA's Streamline release only after the user reviews and accepts the license texts.
