@@ -58,6 +58,7 @@ VK_DEFINE_HANDLE(VmaPool)
 // Define all features which may be used by the implementation and require an extension here.
 #define FOR_EACH_VK_FEATURE_EXT(FEATURE)                                                           \
     FEATURE(EXT, BorderColorSwizzle, BORDER_COLOR_SWIZZLE, border_color_swizzle)                   \
+    FEATURE(KHR, CooperativeMatrix, COOPERATIVE_MATRIX, cooperative_matrix)                        \
     FEATURE(EXT, ColorWriteEnable, COLOR_WRITE_ENABLE, color_write_enable)                         \
     FEATURE(EXT, CustomBorderColor, CUSTOM_BORDER_COLOR, custom_border_color)                      \
     FEATURE(EXT, DepthBiasControl, DEPTH_BIAS_CONTROL, depth_bias_control)                         \
@@ -482,6 +483,12 @@ FN_MAX_LIMIT_LIST
     /// Returns true if the device supports float16 natively.
     bool IsFloat16Supported() const {
         return features.shader_float16_int8.shaderFloat16;
+    }
+
+    /// Subgroup fp16 cooperative matrix shape for HMMA (VK_KHR_cooperative_matrix), if any.
+    enum class CooperativeMatrixShape { None, M16N8K16, M8N16K16 };
+    CooperativeMatrixShape GetCooperativeMatrixShape() const {
+        return cooperative_matrix_shape;
     }
 
     /// Returns true if the device can run shaders built against the Vulkan memory model.
@@ -1298,6 +1305,7 @@ private:
         VkPhysicalDevicePushDescriptorPropertiesKHR push_descriptor{};
         VkPhysicalDeviceDescriptorBufferPropertiesEXT descriptor_buffer{};
         VkPhysicalDeviceSubgroupSizeControlProperties subgroup_size_control{};
+        VkPhysicalDeviceCooperativeMatrixPropertiesKHR cooperative_matrix{};
         VkPhysicalDeviceTransformFeedbackPropertiesEXT transform_feedback{};
         VkPhysicalDeviceMaintenance5PropertiesKHR maintenance5{};
         VkPhysicalDeviceDepthStencilResolveProperties depth_stencil_resolve{};
@@ -1352,6 +1360,7 @@ private:
     bool streamline_attached{};   ///< Streamline has this device.
     bool xess_extensions{};       ///< Intel XeSS's extensions are loaded.
     bool xess_attached{};         ///< XeSS has a context on this device.
+    CooperativeMatrixShape cooperative_matrix_shape{}; ///< HMMA shape (compute stage).
     std::vector<size_t> valid_heap_memory;                   ///< Heaps used.
     size_t main_heap{};       ///< Largest device-local heap, where images live.
     u64 heap_size_limit{};    ///< EDEN_NX2_VRAM_LIMIT_MIB for device-local heaps, 0 if unset.
