@@ -24,6 +24,7 @@ See also: [Dolphin emulator](hhttps://github.com/dolphin-emu/dolphin/blob/cdbea8
 | Intel | All | Proprietary | <27.20.100.0 | Intel Windows versions before 27.20.100.0 has broken `VK_EXT_vertex_input_dynamic_state`. |
 | Intel | All | Proprietary | ? | Intel proprietary drivers do not support MSAA->MSAA image blits. |
 | Intel | All | Proprietary | 0.405.0<br>until<br>0.405.286 | Intel proprietary drivers 0.405.0 until 0.405.286 have broken compute. |
+| Intel | Windows | Proprietary | ? | The integrated-GPU shader compiler crashed with fp16 math (Astral Chain), so `shaderFloat16` is off on integrated Intel GPUs. Arc (discrete) keeps it. |
 | Intel | macOS | Proprietary | ? | Using dynamic sampler indexing locks up the GPU. |
 | Intel | macOS | Proprietary | ? | Using subgroupMax in a shader that can discard results in garbage data. |
 | Intel | All | Mesa | ? | Broken lines in geometry shaders when writing to `gl_ClipDistance` in the vertex shader. |
