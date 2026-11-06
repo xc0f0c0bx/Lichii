@@ -198,6 +198,14 @@ if (CXX_CLANG_CL)
         $<$<COMPILE_LANGUAGE:C,CXX>:-Wno-c++98-compat>
         $<$<COMPILE_LANGUAGE:C,CXX>:-Wno-c99-compat>
         $<$<COMPILE_LANGUAGE:C,CXX>:/EHsc>)
+
+    # MSVC STL 14.51 and 14.52 vectorize std::find for every type Clang reports as trivially
+    # equality comparable, then static_assert on sizes other than 1/2/4/8 bytes
+    # (microsoft/STL#6294, fixed in 14.53). Fall back to the scalar algorithms there.
+    if (MSVC_VERSION GREATER_EQUAL 1951 AND MSVC_VERSION LESS 1953)
+        add_compile_definitions(_USE_STD_VECTOR_ALGORITHMS=0)
+    endif()
+
     # REQUIRED CPU features IN Windows-amd64
     if (ARCHITECTURE_x86_64)
         add_compile_options(
