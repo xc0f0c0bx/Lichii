@@ -1623,7 +1623,8 @@ void Device::RemoveUnsuitableExtensions() {
                                        VK_EXT_SUBGROUP_SIZE_CONTROL_EXTENSION_NAME);
 
     // VK_KHR_cooperative_matrix: a subgroup fp16 shape for the guest's HMMA (compute only), the
-    // guest's own 16x8x16 or Intel's 8x16x16 through the transposed product.
+    // guest's own 16x8x16, 8x16x16 through the transposed product, or, failing both, 8x8x16 with
+    // an fp32 accumulator (Arc A-series), run twice over the two halves of A.
     extensions.cooperative_matrix =
         extensions.cooperative_matrix && features.cooperative_matrix.cooperativeMatrix &&
         (properties.cooperative_matrix.cooperativeMatrixSupportedStages &
@@ -1639,13 +1640,22 @@ void Device::RemoveUnsuitableExtensions() {
                        .pNext = nullptr,
                    });
         dld.vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR(physical, &count, shapes.data());
+        bool m8n8_fp32{};
         for (const VkCooperativeMatrixPropertiesKHR& shape : shapes) {
-            const bool fp16 = shape.AType == VK_COMPONENT_TYPE_FLOAT16_KHR &&
-                              shape.BType == VK_COMPONENT_TYPE_FLOAT16_KHR &&
-                              shape.CType == VK_COMPONENT_TYPE_FLOAT16_KHR &&
-                              shape.ResultType == VK_COMPONENT_TYPE_FLOAT16_KHR;
-            if (!fp16 || shape.scope != VK_SCOPE_SUBGROUP_KHR || shape.saturatingAccumulation ||
-                shape.KSize != 16) {
+            const bool fp16_inputs = shape.AType == VK_COMPONENT_TYPE_FLOAT16_KHR &&
+                                     shape.BType == VK_COMPONENT_TYPE_FLOAT16_KHR;
+            if (!fp16_inputs || shape.scope != VK_SCOPE_SUBGROUP_KHR ||
+                shape.saturatingAccumulation || shape.KSize != 16) {
+                continue;
+            }
+            if (shape.CType == VK_COMPONENT_TYPE_FLOAT32_KHR &&
+                shape.ResultType == VK_COMPONENT_TYPE_FLOAT32_KHR && shape.MSize == 8 &&
+                shape.NSize == 8) {
+                m8n8_fp32 = true;
+                continue;
+            }
+            if (shape.CType != VK_COMPONENT_TYPE_FLOAT16_KHR ||
+                shape.ResultType != VK_COMPONENT_TYPE_FLOAT16_KHR) {
                 continue;
             }
             if (shape.MSize == 16 && shape.NSize == 8) {
@@ -1656,10 +1666,15 @@ void Device::RemoveUnsuitableExtensions() {
                 cooperative_matrix_shape = CooperativeMatrixShape::M8N16K16;
             }
         }
+        if (cooperative_matrix_shape == CooperativeMatrixShape::None && m8n8_fp32) {
+            cooperative_matrix_shape = CooperativeMatrixShape::M8N8K16;
+        }
         LOG_INFO(Render_Vulkan, "Cooperative matrix HMMA: {}",
                  cooperative_matrix_shape == CooperativeMatrixShape::M16N8K16   ? "16x8x16"
                  : cooperative_matrix_shape == CooperativeMatrixShape::M8N16K16 ? "8x16x16"
-                                                                                  : "no fp16 shape");
+                 : cooperative_matrix_shape == CooperativeMatrixShape::M8N8K16
+                     ? "8x8x16 fp32 accumulator, two halves"
+                     : "no fp16 shape");
     }
 
     // VK_EXT_transform_feedback

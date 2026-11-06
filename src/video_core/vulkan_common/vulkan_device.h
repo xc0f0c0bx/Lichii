@@ -486,7 +486,7 @@ FN_MAX_LIMIT_LIST
     }
 
     /// Subgroup fp16 cooperative matrix shape for HMMA (VK_KHR_cooperative_matrix), if any.
-    enum class CooperativeMatrixShape { None, M16N8K16, M8N16K16 };
+    enum class CooperativeMatrixShape { None, M16N8K16, M8N16K16, M8N8K16 };
     CooperativeMatrixShape GetCooperativeMatrixShape() const {
         return cooperative_matrix_shape;
     }

@@ -16,7 +16,8 @@ enum class Stage : u32;
 enum class CooperativeMatrixShape : u32 {
     None,
     M16N8K16, ///< The guest's own shape (NVIDIA, for one).
-    M8N16K16, ///< The transposed product (Intel Arc).
+    M8N16K16, ///< The transposed product.
+    M8N8K16,  ///< Two halves of the product, fp32 accumulation (Intel Arc A-series).
 };
 
 struct Profile {
