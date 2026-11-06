@@ -6,16 +6,14 @@
 #include <array>
 #include <cstdlib>
 
-#include "video_core/vulkan_common/vulkan.h"
-
-#include <xess/xess_vk.h>
-
 #include "common/logging.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 #include "video_core/renderer_vulkan/vk_xess_upscaler.h"
 #include "video_core/vulkan_common/vulkan_device.h"
 #include "video_core/vulkan_common/vulkan_memory_allocator.h"
 #include "video_core/vulkan_common/xess.h"
+
+#include <xess/xess_vk.h>
 
 namespace Vulkan {
 namespace {

@@ -1371,6 +1371,11 @@ bool Device::GetSuitability(bool requires_swapchain) {
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_SIZE_CONTROL_PROPERTIES;
         SetNext(next, properties.subgroup_size_control);
     }
+    if (extensions.cooperative_matrix) {
+        properties.cooperative_matrix.sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_PROPERTIES_KHR;
+        SetNext(next, properties.cooperative_matrix);
+    }
     if (extensions.transform_feedback) {
         properties.transform_feedback.sType =
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TRANSFORM_FEEDBACK_PROPERTIES_EXT;
@@ -1616,6 +1621,46 @@ void Device::RemoveUnsuitableExtensions() {
     RemoveExtensionFeatureIfUnsuitable(extensions.subgroup_size_control,
                                        features.subgroup_size_control,
                                        VK_EXT_SUBGROUP_SIZE_CONTROL_EXTENSION_NAME);
+
+    // VK_KHR_cooperative_matrix: a subgroup fp16 shape for the guest's HMMA (compute only), the
+    // guest's own 16x8x16 or Intel's 8x16x16 through the transposed product.
+    extensions.cooperative_matrix =
+        extensions.cooperative_matrix && features.cooperative_matrix.cooperativeMatrix &&
+        (properties.cooperative_matrix.cooperativeMatrixSupportedStages &
+         VK_SHADER_STAGE_COMPUTE_BIT) != 0;
+    RemoveExtensionFeatureIfUnsuitable(extensions.cooperative_matrix, features.cooperative_matrix,
+                                       VK_KHR_COOPERATIVE_MATRIX_EXTENSION_NAME);
+    if (extensions.cooperative_matrix && dld.vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR) {
+        u32 count{};
+        dld.vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR(physical, &count, nullptr);
+        std::vector<VkCooperativeMatrixPropertiesKHR> shapes(
+            count, VkCooperativeMatrixPropertiesKHR{
+                       .sType = VK_STRUCTURE_TYPE_COOPERATIVE_MATRIX_PROPERTIES_KHR,
+                       .pNext = nullptr,
+                   });
+        dld.vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR(physical, &count, shapes.data());
+        for (const VkCooperativeMatrixPropertiesKHR& shape : shapes) {
+            const bool fp16 = shape.AType == VK_COMPONENT_TYPE_FLOAT16_KHR &&
+                              shape.BType == VK_COMPONENT_TYPE_FLOAT16_KHR &&
+                              shape.CType == VK_COMPONENT_TYPE_FLOAT16_KHR &&
+                              shape.ResultType == VK_COMPONENT_TYPE_FLOAT16_KHR;
+            if (!fp16 || shape.scope != VK_SCOPE_SUBGROUP_KHR || shape.saturatingAccumulation ||
+                shape.KSize != 16) {
+                continue;
+            }
+            if (shape.MSize == 16 && shape.NSize == 8) {
+                cooperative_matrix_shape = CooperativeMatrixShape::M16N8K16;
+                break;
+            }
+            if (shape.MSize == 8 && shape.NSize == 16) {
+                cooperative_matrix_shape = CooperativeMatrixShape::M8N16K16;
+            }
+        }
+        LOG_INFO(Render_Vulkan, "Cooperative matrix HMMA: {}",
+                 cooperative_matrix_shape == CooperativeMatrixShape::M16N8K16   ? "16x8x16"
+                 : cooperative_matrix_shape == CooperativeMatrixShape::M8N16K16 ? "8x16x16"
+                                                                                  : "no fp16 shape");
+    }
 
     // VK_EXT_transform_feedback
     extensions.transform_feedback =

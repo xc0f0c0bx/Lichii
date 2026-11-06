@@ -34,6 +34,25 @@ dispatches, capped at one million. Logs include exact shader identity, QMD launc
 bounded constant-buffer words and raw texture descriptors. They contain guest addresses
 and should remain private. No shaders are skipped or game files changed by this capture.
 
+## Tensor instructions on the host
+
+A game's own DLSS network, and any other Switch 2 shader using the tensor (HMMA) instructions,
+runs those as `TensorMulAdd` in the shader recompiler. By default they are emulated in software
+(`emit_spirv_tensor.cpp`): a loop of subgroup shuffles and fused multiply-adds reproducing
+NVIDIA's fp16 rounding after every K=8 group, which needs compute shaders 32 threads wide.
+
+When the device offers `VK_KHR_cooperative_matrix` with a subgroup-scope fp16 shape of
+16x8x16 (the guest's own shape) or 8x16x16 (Intel Arc, through the transposed product), the
+compute stage uses the matrix hardware instead: XMX units on Arc, tensor cores on NVIDIA. Each
+lane stores its m16n8k16 fragments to a per-subgroup shared-memory scratch, one
+`OpCooperativeMatrixMulAddKHR` computes the product, and each lane reads its result back.
+Sirit has no KHR cooperative matrix instructions, so they are emitted as markers and rewritten
+after assembly. The hardware accumulates differently from the software path (no fp16 rounding at
+the K=8 midpoint), so results are close but not bit-identical; the network's output checks still
+apply. A depth-8 product uses the same K=16 shape with its zeroed upper registers.
+`EDEN_NX2_TENSOR=software` forces the software path for A/B runs. The path is skipped outside
+compute, without fp16 support, and when the scratch would push shared memory past 32 KiB.
+
 ## Settings and comparison runs
 
 "Use NVIDIA DLSS in place of a game's DLSS" defaults to off and takes effect when the game
