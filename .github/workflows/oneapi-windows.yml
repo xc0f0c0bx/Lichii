@@ -1,0 +1,166 @@
+name: oneapi-windows
+
+# Windows x64 build with the Intel oneAPI DPC++/C++ compiler (icx-cl). Checks that the toolchain
+# support in CMakeLists.txt configures, compiles and packages, and produces a test binary.
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - oneapi-icx-build
+
+permissions:
+  contents: read
+
+# Same offline installer and component Intel's own CI uses (oneapi-src/oneapi-ci). The component
+# brings icx, icx-cl and the Intel runtime DLLs; nothing else from the toolkit is needed.
+env:
+  ONEAPI_URL: https://registrationcenter-download.intel.com/akdlm/IRC_NAS/728c4418-1b40-47a9-ad51-31530fb27c94/intel-oneapi-toolkit-2026.2.0.661_offline.exe
+  ONEAPI_COMPONENTS: intel.oneapi.win.cpp-dpcpp-common
+  ONEAPI_ROOT: C:\Program Files (x86)\Intel\oneAPI
+
+concurrency:
+  group: oneapi-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-icx:
+    name: Windows x64 icx-cl build
+    runs-on: windows-2022
+    timeout-minutes: 300
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.8.3"
+          host: windows
+          target: desktop
+          arch: win64_msvc2022_64
+          modules: qtcharts
+          cache: true
+
+      - name: Install Vulkan SDK
+        shell: pwsh
+        run: ./tools/windows/install-vulkan-sdk.ps1
+
+      - name: Verify Vulkan tools
+        shell: pwsh
+        run: glslangValidator --version
+
+      # The installer takes about 15 minutes; the installed compiler is cached by installer URL.
+      - name: Restore oneAPI compiler
+        id: oneapi-cache
+        uses: actions/cache@v5
+        with:
+          path: |
+            ${{ env.ONEAPI_ROOT }}\compiler
+            ${{ env.ONEAPI_ROOT }}\setvars.bat
+            ${{ env.ONEAPI_ROOT }}\setvars-vcvarsall.bat
+          key: oneapi-${{ env.ONEAPI_URL }}-${{ env.ONEAPI_COMPONENTS }}
+
+      - name: Install oneAPI compiler
+        if: steps.oneapi-cache.outputs.cache-hit != 'true'
+        shell: cmd
+        run: |
+          curl.exe --output %TEMP%\webimage.exe --url %ONEAPI_URL% --retry 5 --retry-delay 5
+          start /b /wait %TEMP%\webimage.exe -s -x -f webimage_extracted --log extract.log
+          del %TEMP%\webimage.exe
+          webimage_extracted\bootstrapper.exe -s --action install --components=%ONEAPI_COMPONENTS% --eula=accept -p=NEED_VS2017_INTEGRATION=0 -p=NEED_VS2019_INTEGRATION=0 -p=NEED_VS2022_INTEGRATION=0 --log-dir=.
+          set installer_exit_code=%ERRORLEVEL%
+          rd /s/q "webimage_extracted"
+          exit /b %installer_exit_code%
+
+      # Trim what the build never uses so the cache stays small (as oneapi-ci does).
+      - name: Trim oneAPI install for the cache
+        if: steps.oneapi-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="/c/Program Files (x86)/Intel/oneAPI/compiler"
+          version=$(ls -1 "$root" | grep -v latest | sort | tail -1)
+          for sub in lib/ia32_win bin/intel64_ia32 lib/emu lib/oclfpga lib/ocloc lib/x86 opt/oclfpga opt/compiler/lib/ia32_win; do
+            rm -rf "$root/$version/$sub"
+          done
+
+      # setvars.bat puts icx-cl on PATH and sets the Intel include and library paths on top of the
+      # MSVC environment msvc-dev-cmd already exported. Its result is copied into GITHUB_ENV so
+      # the later steps see it.
+      - name: Load the oneAPI environment
+        shell: cmd
+        run: |
+          call "%ONEAPI_ROOT%\setvars.bat" --force > nul
+          if errorlevel 1 exit /b 1
+          set >> %GITHUB_ENV%
+
+      - name: Verify icx-cl
+        shell: bash
+        run: |
+          set -euo pipefail
+          which icx-cl
+          icx-cl --version
+
+      - name: Restore CPM downloads
+        id: cpm-cache
+        uses: actions/cache/restore@v5
+        with:
+          path: .cache/cpm
+          key: cpm-windows-x86_64-v2-${{ hashFiles('cpmfile.json', 'CMakeLists.txt', 'CMakeModules/CPM*.cmake', 'externals/**/CMakeLists.txt', 'src/**/CMakeLists.txt') }}
+          restore-keys: |
+            cpm-windows-x86_64-v2-
+            cpm-Windows-
+
+      - name: Configure
+        shell: bash
+        run: >-
+          cmake -S . -B build/release -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_C_COMPILER=icx-cl
+          -DCMAKE_CXX_COMPILER=icx-cl
+          -DBUILD_TESTING=OFF
+          -DYUZU_TESTS=OFF
+          -DYUZU_CMD=ON
+          -DYUZU_ROOM=OFF
+          -DYUZU_ROOM_STANDALONE=OFF
+          -DYUZU_USE_BUNDLED_QT=OFF
+          -DYUZU_USE_BUNDLED_SDL3=ON
+          -DENABLE_UPDATE_CHECKER=ON
+          -DLICHII_BUILD_TAG=oneapi-${{ github.run_number }}
+          -DLICHII_BUILD_PLATFORM=windows-x86_64-oneapi
+          -DUSE_DISCORD_PRESENCE=OFF
+
+      - name: Save CPM downloads
+        if: steps.cpm-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: .cache/cpm
+          key: ${{ steps.cpm-cache.outputs.cache-primary-key }}
+
+      - name: Build
+        shell: bash
+        run: cmake --build build/release --target yuzu yuzu-cmd --parallel
+
+      - name: Package Windows binary
+        shell: pwsh
+        run: |
+          foreach ($file in 'lichii.exe', 'eden-cli.exe', 'libmmd.dll', 'svml_dispmd.dll') {
+            if (-not (Test-Path "build/release/bin/$file")) {
+              throw "build/release/bin/$file was not produced"
+            }
+          }
+          windeployqt --release --no-translations build/release/bin/lichii.exe
+
+      - name: Upload Windows binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: lichii-windows-x86_64-oneapi-${{ github.sha }}
+          path: build/release/bin/
+          if-no-files-found: error
+          retention-days: 7

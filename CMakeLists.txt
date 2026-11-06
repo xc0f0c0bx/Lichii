@@ -86,7 +86,7 @@ option(ENABLE_WERROR "Enable -Werror diagnostics" ON)
 
 # Handle specific -Werror downgrades safely across platforms
 if(ENABLE_WERROR)
-    if(CMAKE_COMPILER_IS_GNUCC OR CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    if(CMAKE_COMPILER_IS_GNUCC OR CMAKE_COMPILER_IS_GNUCXX OR CXX_CLANG)
         if(CMAKE_C_FLAGS MATCHES "-Werror=unused")
             string(REPLACE "-Werror=unused" "-Wno-error=unused" CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
         endif()
@@ -204,6 +204,39 @@ if (CXX_CLANG_CL)
             $<$<COMPILE_LANGUAGE:C,CXX>:-msse4.1>
             $<$<COMPILE_LANGUAGE:C,CXX>:-mcx16>
         )
+    endif()
+endif()
+
+# Intel oneAPI DPC++/C++ (icx-cl on Windows, icx/icpx elsewhere)
+if (CXX_ICC)
+    if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 2025.0)
+        message(FATAL_ERROR "Intel oneAPI DPC++/C++ ${CMAKE_CXX_COMPILER_VERSION} is too old, 2025.0 or newer is required")
+    endif()
+
+    # icx defaults to -fp-model=fast, which assumes there are no NaNs or infinities and lets the
+    # optimizer reassociate. Guest float semantics (and Settings/IR constant folding) rely on both.
+    if (MSVC)
+        add_compile_options($<$<COMPILE_LANGUAGE:C,CXX>:/fp:precise>)
+    else()
+        add_compile_options($<$<COMPILE_LANGUAGE:C,CXX>:-fp-model=precise>)
+        # icpx links Intel's math and SVML libraries dynamically whenever the optimizer uses them;
+        # link them statically so the binaries run on machines without oneAPI installed.
+        add_link_options(-static-intel)
+    endif()
+
+    # icx-cl links Intel's math and SVML runtimes as DLLs; ship them next to the executables.
+    if (WIN32)
+        get_filename_component(ICX_BIN_DIR "${CMAKE_CXX_COMPILER}" DIRECTORY)
+        foreach(dll libmmd.dll svml_dispmd.dll)
+            find_file(ICX_RUNTIME_${dll} ${dll}
+                HINTS "${ICX_BIN_DIR}" "${ICX_BIN_DIR}/../redist/intel64_win/compiler" "$ENV{CMPLR_ROOT}/bin"
+                NO_DEFAULT_PATH)
+            if (ICX_RUNTIME_${dll})
+                list(APPEND ICX_RUNTIME_DLLS "${ICX_RUNTIME_${dll}}")
+            else()
+                message(WARNING "Intel oneAPI runtime ${dll} not found: copy it next to the executable yourself")
+            endif()
+        endforeach()
     endif()
 endif()
 
@@ -395,6 +428,11 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Output binaries to bin/
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/bin)
+
+if (ICX_RUNTIME_DLLS)
+    file(COPY ${ICX_RUNTIME_DLLS} DESTINATION "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
+    install(FILES ${ICX_RUNTIME_DLLS} TYPE BIN)
+endif()
 
 # System imported libraries
 # =======================================================================

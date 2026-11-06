@@ -1,0 +1,20 @@
+From: Lichii
+Subject: [PATCH] silk: do not redefine clang builtins under clang-cl and icx-cl
+
+clang-cl tolerates the duplicate definitions; Intel icx-cl (a newer Clang) rejects them with
+"definition of builtin function". Both compilers provide the builtins themselves.
+
+diff --git a/silk/x86/NSQ_del_dec_avx2.c b/silk/x86/NSQ_del_dec_avx2.c
+--- a/silk/x86/NSQ_del_dec_avx2.c
++++ b/silk/x86/NSQ_del_dec_avx2.c
+@@ -70,8 +70,8 @@
+            psEncC->nStatesDelayedDecision == 4;
+ }
+ 
+-/* Intrinsics not defined on MSVC */
+-#ifdef _MSC_VER
++/* Intrinsics not defined on MSVC; clang-cl and icx-cl have them as builtins */
++#if defined(_MSC_VER) && !defined(__clang__)
+ #include <intsafe.h>
+ static inline int __builtin_sadd_overflow(opus_int32 a, opus_int32 b, opus_int32* res)
+ {
