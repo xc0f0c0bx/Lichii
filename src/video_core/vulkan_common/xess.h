@@ -12,6 +12,10 @@
 #include <string>
 #include <vector>
 
+// xess_vk.h includes vulkan/vulkan.h itself; our wrapper must go first so the platform
+// (VK_USE_PLATFORM_*) sections are part of that first inclusion.
+#include "video_core/vulkan_common/vulkan.h"
+
 #include <xess/xess.h>
 #include <xess/xess_vk.h>
 

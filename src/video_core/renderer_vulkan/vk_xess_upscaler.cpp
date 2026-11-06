@@ -6,6 +6,8 @@
 #include <array>
 #include <cstdlib>
 
+#include "video_core/vulkan_common/vulkan.h"
+
 #include <xess/xess_vk.h>
 
 #include "common/logging.h"
