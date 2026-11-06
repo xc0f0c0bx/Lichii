@@ -12,11 +12,13 @@
 #include <string>
 #include <vector>
 
+#include "common/common_types.h"
+// Before the SDK headers: xess_vk.h includes vulkan.h, which must see the project's platform
+// defines (VK_USE_PLATFORM_WIN32_KHR, VK_NO_PROTOTYPES) first.
+#include "video_core/vulkan_common/vulkan_wrapper.h"
+
 #include <xess/xess.h>
 #include <xess/xess_vk.h>
-
-#include "common/common_types.h"
-#include "video_core/vulkan_common/vulkan_wrapper.h"
 
 namespace Vulkan::Xess {
 
