@@ -70,7 +70,9 @@ private:
 inline bool UseReplacement(u64 program_id, u64 native_key, const char* option) {
     const auto passes = CapturedPasses(program_id);
     return passes && native_key == passes->output &&
-           (option == nullptr || (std::string_view{option} == "fsr" || std::string_view{option} == "dlss"));
+           (option == nullptr || (std::string_view{option} == "fsr" ||
+                                  std::string_view{option} == "dlss" ||
+                                  std::string_view{option} == "xess"));
 }
 
 inline bool PlainImage(const Tegra::Texture::TICEntry& image) {

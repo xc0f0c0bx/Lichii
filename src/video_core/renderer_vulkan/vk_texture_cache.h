@@ -21,6 +21,9 @@
 #ifdef EGLANTINE_STREAMLINE
 #include "video_core/renderer_vulkan/vk_streamline_dlss.h"
 #endif
+#ifdef EGLANTINE_XESS
+#include "video_core/renderer_vulkan/vk_xess_upscaler.h"
+#endif
 #include "video_core/renderer_vulkan/vk_render_pass_cache.h"
 #include "video_core/renderer_vulkan/vk_staging_buffer_pool.h"
 #include "video_core/texture_cache/image_view_base.h"
@@ -147,6 +150,9 @@ public:
     /// True while TemporalUpscale would use NVIDIA DLSS (on, Streamline running, not failed).
     [[nodiscard]] bool UsesNvidiaDlss() const;
 
+    /// True while TemporalUpscale would use Intel XeSS (on, loaded, not failed, no NVIDIA DLSS).
+    [[nodiscard]] bool UsesIntelXess() const;
+
     /// Records a health check of a game's DLSS network output against its input (both sampled in
     /// the GENERAL layout) and returns an earlier check's result once the GPU has finished it.
     [[nodiscard]] std::optional<VideoCore::GameDlssProbe> ProbeGameDlssOutput(ImageView& input,
@@ -267,6 +273,16 @@ public:
                          std::array<f32, 2> motion_scale, bool reset);
     std::unique_ptr<StreamlineDlssUpscaler> dlss_upscaler;
     bool dlss_unsupported{};
+#endif
+#ifdef EGLANTINE_XESS
+    /// Intel XeSS in place of the game's DLSS, after NVIDIA DLSS and before FSR 3.1, when the
+    /// setting is on. Returns false to fall back to FSR 3.1.
+    bool UpscaleWithXess(Framebuffer* dst_framebuffer, ImageView& input_color,
+                         ImageView& motion_vectors, ImageView& depth,
+                         std::array<u32, 2> render_size, std::array<f32, 2> jitter,
+                         std::array<f32, 2> motion_scale, bool reset);
+    std::unique_ptr<XessUpscaler> xess_upscaler;
+    bool xess_unsupported{};
 #endif
 
     /// TemporalUpscale's history: its previous result (images[current]) and the image the next

@@ -20,6 +20,7 @@ enum class GameDlssReason : u8 {
     None,
     TurnedOff,         ///< EDEN_NX2_DLSS_REPLACEMENT asks for the replacement.
     NvidiaDlss,        ///< NVIDIA DLSS is turned on and runs in its place.
+    IntelXess,         ///< Intel XeSS is turned on and runs in its place.
     ResolutionScaling, ///< The network only makes the game's own resolution.
     Unsupported,       ///< Not Vulkan, or compute shaders can't be made 32 threads wide.
     PassesCannotRun,   ///< Some of the network's programs can't be translated (rejected_passes).

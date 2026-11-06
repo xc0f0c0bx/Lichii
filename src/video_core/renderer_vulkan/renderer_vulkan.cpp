@@ -45,6 +45,9 @@
 #ifdef EGLANTINE_STREAMLINE
 #include "video_core/vulkan_common/streamline.h"
 #endif
+#ifdef EGLANTINE_XESS
+#include "video_core/vulkan_common/xess.h"
+#endif
 #ifdef __ANDROID__
 #include <jni.h>
 #endif
@@ -137,10 +140,18 @@ try
 #ifdef EGLANTINE_STREAMLINE
     , streamline_started(Streamline::Start())
 #endif
+#ifdef EGLANTINE_XESS
+    , xess_started(Xess::Start())
+#endif
     // Create raw Vulkan instance first
     , instance(CreateInstance(*library,
                             dld,
+#ifdef EGLANTINE_XESS
+                            // XeSS needs the instance made for at least its API version.
+                            std::max<u32>(VK_API_VERSION_1_1, Xess::MinApiVersion()),
+#else
                             VK_API_VERSION_1_1,
+#endif
                             render_window.GetWindowInfo().type,
                             Settings::values.renderer_debug.GetValue()))
     // Create debug messenger if debug is enabled

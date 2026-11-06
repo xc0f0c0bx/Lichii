@@ -13,6 +13,8 @@ const char* GameDlssReasonText(GameDlssReason reason) {
         return "it is turned off";
     case GameDlssReason::NvidiaDlss:
         return "NVIDIA DLSS is turned on and runs in its place";
+    case GameDlssReason::IntelXess:
+        return "Intel XeSS is turned on and runs in its place";
     case GameDlssReason::ResolutionScaling:
         return "it only makes the game's own resolution (resolution scaling is on)";
     case GameDlssReason::Unsupported:

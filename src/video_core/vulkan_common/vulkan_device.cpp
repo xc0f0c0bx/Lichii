@@ -35,6 +35,9 @@
 #ifdef EGLANTINE_STREAMLINE
 #include "video_core/vulkan_common/streamline.h"
 #endif
+#ifdef EGLANTINE_XESS
+#include "video_core/vulkan_common/xess.h"
+#endif
 
 #if defined(__ANDROID__) && defined(ARCHITECTURE_arm64)
 #include <adrenotools/bcenabler.h>
@@ -763,6 +766,13 @@ Device::Device(VkInstance instance_, vk::PhysicalDevice physical_, VkSurfaceKHR 
                                VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME);
     }
 
+#ifdef EGLANTINE_XESS
+    // XeSS writes the features it needs into this chain (and appends its own structures).
+    if (xess_extensions && !Xess::AddDeviceFeatures(instance, physical, features2)) {
+        xess_extensions = false;
+    }
+#endif
+
     logical = vk::Device::Create(physical, queue_cis, ExtensionListForVulkan(loaded_extensions), first_next, dld);
 
     graphics_queue = logical.GetQueue(graphics_family);
@@ -774,6 +784,13 @@ Device::Device(VkInstance instance_, vk::PhysicalDevice physical_, VkSurfaceKHR 
             Streamline::AttachDevice(instance, physical, *logical, graphics_family, dld);
     } else if (Streamline::WantsDevice()) {
         Streamline::Stop();
+    }
+#endif
+#ifdef EGLANTINE_XESS
+    if (xess_extensions) {
+        xess_attached = Xess::AttachDevice(instance, physical, *logical);
+    } else if (Xess::WantsDevice()) {
+        Xess::Stop();
     }
 #endif
 
@@ -833,6 +850,11 @@ Device::~Device() {
 #ifdef EGLANTINE_STREAMLINE
     if (streamline_attached) {
         Streamline::Stop();
+    }
+#endif
+#ifdef EGLANTINE_XESS
+    if (xess_attached) {
+        Xess::Stop();
     }
 #endif
     SaveStaticPipelineCache();
@@ -1168,6 +1190,28 @@ bool Device::GetSuitability(bool requires_swapchain) {
         }
         streamline_extensions = all;
         LOG_INFO(Render_Vulkan, "NVIDIA DLSS device extensions: {} ({})",
+                 all ? "enabled" : "unavailable", names.empty() ? "none" : names);
+    }
+#endif
+#ifdef EGLANTINE_XESS
+    // The extensions Intel XeSS asks for on this GPU, where the device has them all.
+    if (Xess::WantsDevice()) {
+        const std::optional<std::vector<std::string>> wanted =
+            Xess::DeviceExtensions(instance, physical);
+        const bool all = wanted && std::ranges::all_of(*wanted, [&](const std::string& name) {
+            return supported_extensions.contains(name);
+        });
+        std::string names;
+        if (wanted) {
+            for (const std::string& name : *wanted) {
+                if (all) {
+                    loaded_extensions.insert(name);
+                }
+                names += (names.empty() ? "" : ", ") + name;
+            }
+        }
+        xess_extensions = all;
+        LOG_INFO(Render_Vulkan, "Intel XeSS device extensions: {} ({})",
                  all ? "enabled" : "unavailable", names.empty() ? "none" : names);
     }
 #endif

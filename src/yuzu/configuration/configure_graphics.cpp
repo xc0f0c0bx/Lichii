@@ -233,6 +233,12 @@ void ConfigureGraphics::Setup(const ConfigurationShared::Builder& builder) {
             continue;
         }
 #endif
+#ifndef EGLANTINE_XESS
+        // Only builds with the Intel XeSS SDK (Windows) can use it.
+        if (setting->Id() == Settings::values.intel_xess.Id()) {
+            continue;
+        }
+#endif
 
         ConfigurationShared::Widget* widget = [&]() {
             if (setting->Id() == Settings::values.fsr_sharpening_slider.Id()) {

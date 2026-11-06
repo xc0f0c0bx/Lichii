@@ -384,6 +384,8 @@ struct Values {
                                                        true};
     // NVIDIA DLSS (through NVIDIA Streamline) in place of a game's DLSS.
     SwitchableSetting<bool> nvidia_dlss{linkage, false, "nvidia_dlss", Category::Renderer};
+    // Intel XeSS in place of a game's DLSS (after NVIDIA DLSS, before FSR 3.1).
+    SwitchableSetting<bool> intel_xess{linkage, false, "intel_xess", Category::Renderer};
     SwitchableSetting<AspectRatio, true> aspect_ratio{linkage,
                                                       AspectRatio::R16_9,
                                                       "aspect_ratio",

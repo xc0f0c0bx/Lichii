@@ -90,6 +90,9 @@ private:
 #ifdef EGLANTINE_STREAMLINE
     bool streamline_started; ///< NVIDIA Streamline starts before the instance.
 #endif
+#ifdef EGLANTINE_XESS
+    bool xess_started; ///< Intel XeSS loads before the instance, for its extensions.
+#endif
 
     // Keep original handles for compatibility with existing code
     vk::Instance instance;

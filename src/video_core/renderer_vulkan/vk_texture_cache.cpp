@@ -47,6 +47,9 @@
 #ifdef EGLANTINE_STREAMLINE
 #include "video_core/vulkan_common/streamline.h"
 #endif
+#ifdef EGLANTINE_XESS
+#include "video_core/vulkan_common/xess.h"
+#endif
 #include "video_core/vulkan_common/vulkan_memory_allocator.h"
 #include "video_core/vulkan_common/vulkan_wrapper.h"
 #include "video_core/textures/decoders.h"
@@ -1744,16 +1747,34 @@ bool TextureCacheRuntime::WantsTemporalUpscaleDepth() const {
         return true;
     }
 #endif
+#ifdef EGLANTINE_XESS
+    if (Xess::IsAvailable() && !xess_unsupported) {
+        return true;
+    }
+#endif
     return !fsr3_unsupported;
 }
 
 bool TextureCacheRuntime::UsesNvidiaDlss() const {
 #ifdef EGLANTINE_STREAMLINE
-    static const bool force_fsr = [] {
+    // EDEN_NX2_DLSS_REPLACEMENT=fsr or xess picks another backend for A/B runs.
+    static const bool force_other = [] {
         const char* const value = std::getenv("EDEN_NX2_DLSS_REPLACEMENT");
-        return value && std::string_view{value} == "fsr";
+        return value && (std::string_view{value} == "fsr" || std::string_view{value} == "xess");
     }();
-    return !force_fsr && !dlss_unsupported && Streamline::IsDlssAvailable();
+    return !force_other && !dlss_unsupported && Streamline::IsDlssAvailable();
+#else
+    return false;
+#endif
+}
+
+bool TextureCacheRuntime::UsesIntelXess() const {
+#ifdef EGLANTINE_XESS
+    static const bool force_other = [] {
+        const char* const value = std::getenv("EDEN_NX2_DLSS_REPLACEMENT");
+        return value && (std::string_view{value} == "fsr" || std::string_view{value} == "dlss");
+    }();
+    return !force_other && !xess_unsupported && Xess::IsAvailable() && !UsesNvidiaDlss();
 #else
     return false;
 #endif
@@ -1788,6 +1809,12 @@ bool TextureCacheRuntime::UpscaleWithFsr3(Framebuffer* dst_framebuffer, ImageVie
     fsr3_last_evaluation = now;
 #ifdef EGLANTINE_STREAMLINE
     if (UpscaleWithDlss(dst_framebuffer, input_color, motion_vectors, depth, render_size, jitter,
+                        motion_scale, reset)) {
+        return true;
+    }
+#endif
+#ifdef EGLANTINE_XESS
+    if (UpscaleWithXess(dst_framebuffer, input_color, motion_vectors, depth, render_size, jitter,
                         motion_scale, reset)) {
         return true;
     }
@@ -1899,12 +1926,12 @@ bool TextureCacheRuntime::UpscaleWithDlss(Framebuffer* dst_framebuffer, ImageVie
                                           std::array<u32, 2> render_size,
                                           std::array<f32, 2> jitter,
                                           std::array<f32, 2> motion_scale, bool reset) {
-    // EDEN_NX2_DLSS_REPLACEMENT=fsr keeps FSR 3.1 for A/B runs.
-    static const bool force_fsr = [] {
+    // EDEN_NX2_DLSS_REPLACEMENT=fsr keeps FSR 3.1, and xess Intel XeSS, for A/B runs.
+    static const bool force_other = [] {
         const char* const value = std::getenv("EDEN_NX2_DLSS_REPLACEMENT");
-        return value && std::string_view{value} == "fsr";
+        return value && (std::string_view{value} == "fsr" || std::string_view{value} == "xess");
     }();
-    if (force_fsr || dlss_unsupported) {
+    if (force_other || dlss_unsupported) {
         return false;
     }
     if (!dlss_upscaler) {
@@ -1970,6 +1997,88 @@ bool TextureCacheRuntime::UpscaleWithDlss(Framebuffer* dst_framebuffer, ImageVie
     if (!logged) {
         logged = true;
         LOG_INFO(Render_Vulkan, "DLSS replaced by NVIDIA DLSS: {}x{} -> {}x{}", render_size[0],
+                 render_size[1], extent.width, extent.height);
+    }
+    return true;
+}
+#endif
+
+#ifdef EGLANTINE_XESS
+bool TextureCacheRuntime::UpscaleWithXess(Framebuffer* dst_framebuffer, ImageView& input_color,
+                                          ImageView& motion_vectors, ImageView& depth,
+                                          std::array<u32, 2> render_size,
+                                          std::array<f32, 2> jitter,
+                                          std::array<f32, 2> motion_scale, bool reset) {
+    // EDEN_NX2_DLSS_REPLACEMENT=fsr keeps FSR 3.1, and dlss NVIDIA DLSS, for A/B runs.
+    static const bool force_other = [] {
+        const char* const value = std::getenv("EDEN_NX2_DLSS_REPLACEMENT");
+        return value && (std::string_view{value} == "fsr" || std::string_view{value} == "dlss");
+    }();
+    if (force_other || xess_unsupported) {
+        return false;
+    }
+    if (!xess_upscaler) {
+        // Off in the settings, or XeSS didn't start: it has said why.
+        if (!Xess::IsAvailable()) {
+            xess_unsupported = true;
+            return false;
+        }
+        try {
+            xess_upscaler = std::make_unique<XessUpscaler>(device, scheduler, memory_allocator);
+        } catch (const vk::Exception& exception) {
+            LOG_WARNING(Render_Vulkan, "Intel XeSS unavailable ({}); using FSR 3.1",
+                        exception.what());
+            xess_unsupported = true;
+            return false;
+        }
+    }
+    const auto image = [&](ImageView& view, VkImageView handle, VkImageAspectFlags aspect) {
+        return XessUpscaler::Image{
+            .view = handle,
+            .image = view.ImageHandle(),
+            .format = MaxwellToVK::SurfaceFormat(device, FormatType::Optimal, false, view.format)
+                          .format,
+            .range{
+                .aspectMask = aspect,
+                .baseMipLevel = static_cast<u32>(view.range.base.level),
+                .levelCount = 1,
+                .baseArrayLayer = static_cast<u32>(view.range.base.layer),
+                .layerCount = 1,
+            },
+            .barrier_aspect = ImageAspectMask(view.format),
+        };
+    };
+    const VkExtent2D extent = dst_framebuffer->RenderArea();
+    bool upscaled{};
+    try {
+        upscaled = xess_upscaler->Upscale({
+            .color = image(input_color, input_color.Handle(Shader::TextureType::Color2D),
+                           VK_IMAGE_ASPECT_COLOR_BIT),
+            .depth = image(depth, depth.DepthView(), VK_IMAGE_ASPECT_DEPTH_BIT),
+            .motion_vectors = image(motion_vectors,
+                                    motion_vectors.Handle(Shader::TextureType::Color2D),
+                                    VK_IMAGE_ASPECT_COLOR_BIT),
+            .render_size = {render_size[0], render_size[1]},
+            .upscale_size = extent,
+            .jitter = jitter,
+            .motion_vector_scale = {motion_scale[0] * static_cast<f32>(render_size[0]),
+                                    motion_scale[1] * static_cast<f32>(render_size[1])},
+            .reset = reset,
+        });
+    } catch (const vk::Exception& exception) {
+        LOG_WARNING(Render_Vulkan, "Intel XeSS evaluation unavailable ({}); using FSR 3.1",
+                    exception.what());
+    }
+    if (!upscaled) {
+        xess_unsupported = true;
+        return false;
+    }
+    DrawUpscaledOutput(dst_framebuffer, xess_upscaler->OutputView(), xess_upscaler->OutputImage(),
+                       xess_upscaler->PointSampler());
+    static bool logged{};
+    if (!logged) {
+        logged = true;
+        LOG_INFO(Render_Vulkan, "DLSS replaced by Intel XeSS: {}x{} -> {}x{}", render_size[0],
                  render_size[1], extent.width, extent.height);
     }
     return true;
