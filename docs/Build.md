@@ -104,6 +104,20 @@ If you are on Windows and prefer to use Clang:
 cmake -S . -B build -G "<GENERATOR>" -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl
 ```
 
+If you are on Windows and prefer the Intel oneAPI DPC++/C++ compiler (2025.0 or newer), open the
+oneAPI command prompt (or run `setvars.bat`) on top of the Visual C++ environment and use the
+MSVC-compatible driver:
+
+```sh
+cmake -S . -B build -G Ninja -DCMAKE_C_COMPILER=icx-cl -DCMAKE_CXX_COMPILER=icx-cl
+```
+
+The build treats icx as clang-cl, forces `/fp:precise` (icx defaults to fast math, which breaks the
+guest float semantics the emulator depends on) and copies `libmmd.dll` and `svml_dispmd.dll` next
+to the executables. On Linux use `-DCMAKE_C_COMPILER=icx -DCMAKE_CXX_COMPILER=icpx` after sourcing
+`setvars.sh`. oneAPI compiles the host code only; it does not change which GPU driver the emulator
+talks to, so an Arc A770 still runs through the Intel Vulkan driver as with any other compiler.
+
 </details>
 
 ### Option C: [CLion](https://www.jetbrains.com/clion/)

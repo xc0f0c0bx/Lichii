@@ -49,7 +49,13 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
 elseif (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     set(CXX_GCC ON)
 elseif (CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM")
+    # Intel oneAPI icx/icpx/icx-cl is a Clang fork and takes every Clang flag, so it also counts
+    # as Clang (and as clang-cl when it uses the MSVC front end).
     set(CXX_ICC ON)
+    set(CXX_CLANG ON)
+    if (MSVC)
+        set(CXX_CLANG_CL ON)
+    endif()
 elseif (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
     set(CXX_APPLE ON)
 endif()
