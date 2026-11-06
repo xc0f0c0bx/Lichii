@@ -454,6 +454,8 @@ Shader::CooperativeMatrixShape CooperativeMatrixShapeFor(const Device& device) {
         return Shader::CooperativeMatrixShape::M16N8K16;
     case Device::CooperativeMatrixShape::M8N16K16:
         return Shader::CooperativeMatrixShape::M8N16K16;
+    case Device::CooperativeMatrixShape::M8N8K16:
+        return Shader::CooperativeMatrixShape::M8N8K16;
     default:
         return Shader::CooperativeMatrixShape::None;
     }

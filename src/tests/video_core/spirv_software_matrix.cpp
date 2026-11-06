@@ -156,6 +156,27 @@ TEST_CASE("Cooperative matrix HMMA rewrites its markers into KHR instructions",
     }
 }
 
+TEST_CASE("Cooperative matrix HMMA runs 8x8x16 fp32 over the two halves of A",
+          "[video_core][tensor][ampere]") {
+    TensorProgram tensor{2, 16};
+    tensor.profile.cooperative_matrix_shape = CooperativeMatrixShape::M8N8K16;
+    const auto code = tensor.Emit("coopmat_halves");
+    REQUIRE(HasCapability(code, 6022));            // CooperativeMatrixKHR
+    REQUIRE(Instructions(code, 4456).size() == 3); // OpTypeCooperativeMatrixKHR: A, B, C
+    REQUIRE(Instructions(code, 4457).size() == 5); // B once, A and C per half
+    REQUIRE(Instructions(code, 4458).size() == 2); // one store per half
+    REQUIRE(Instructions(code, 4459).size() == 2); // one multiply-add per half
+    // The fp32 widening uses GLSL.std.450; every OpExtInst left must name an imported set.
+    std::vector<u32> imports;
+    for (const auto& import : Instructions(code, 11)) {
+        imports.push_back(import[0]);
+    }
+    for (const auto& ext : Instructions(code, 12)) {
+        REQUIRE(std::ranges::find(imports, ext[2]) != imports.end());
+    }
+    REQUIRE(Instructions(code, 345).empty());
+}
+
 TEST_CASE("Cooperative matrix HMMA stays on the software path outside compute",
           "[video_core][tensor][ampere]") {
     TensorProgram tensor{1, 16};

@@ -32,12 +32,17 @@ constexpr u32 MARKER_SET = 0x434F4F50; // "COOP"
 constexpr u32 TYPE_MAGIC = 0x434F0000;
 
 // Per-subgroup staging in shared memory, in 32-bit words holding half pairs: A (16 rows x 16),
-// B transposed (8 rows x 16) and C/D (16 rows x 8).
+// B transposed (8 rows x 16) and C/D (16 rows x 8). The fp32-accumulator shape adds C/D as
+// floats (16 rows x 8).
 constexpr u32 SCRATCH_A = 0;
 constexpr u32 SCRATCH_BT = 128;
 constexpr u32 SCRATCH_C = 192;
-constexpr u32 SCRATCH_WORDS = 256;
+constexpr u32 SCRATCH_C32 = 256;
 constexpr u32 SHARED_MEMORY_LIMIT = 32 * 1024;
+
+u32 ScratchWords(CooperativeMatrixShape shape) {
+    return shape == CooperativeMatrixShape::M8N8K16 ? 384 : 256;
+}
 
 bool UsesTensor(const IR::Program& program) {
     for (const auto* block : program.blocks) {
@@ -61,7 +66,9 @@ bool UsesCooperativeMatrix(const EmitContext& ctx, const IR::Program& program) {
         program.stage != Stage::Compute || !ctx.profile.SupportsSubgroupStage(program.stage)) {
         return false;
     }
-    return program.shared_memory_size + SubgroupsPerWorkgroup(program) * SCRATCH_WORDS * 4 <=
+    return program.shared_memory_size + SubgroupsPerWorkgroup(program) *
+                                            ScratchWords(ctx.profile.cooperative_matrix_shape) *
+                                            4 <=
            SHARED_MEMORY_LIMIT;
 }
 
@@ -81,8 +88,10 @@ Id CooperativeMatrixType(EmitContext& ctx, Id component, u32 rows, u32 columns, 
 }
 
 void DefineCooperativeMatrixFunction(EmitContext& ctx, const IR::Program& program) {
-    const bool transposed =
-        ctx.profile.cooperative_matrix_shape == CooperativeMatrixShape::M8N16K16;
+    const CooperativeMatrixShape shape = ctx.profile.cooperative_matrix_shape;
+    const bool transposed = shape == CooperativeMatrixShape::M8N16K16;
+    const bool halves = shape == CooperativeMatrixShape::M8N8K16;
+    const u32 scratch_words = ScratchWords(shape);
     ctx.AddCapability(spv::Capability::GroupNonUniform);
     ctx.AddCapability(static_cast<spv::Capability>(CAPABILITY_COOPERATIVE_MATRIX_KHR));
     ctx.AddExtension("SPV_KHR_cooperative_matrix");
@@ -98,7 +107,7 @@ void DefineCooperativeMatrixFunction(EmitContext& ctx, const IR::Program& progra
     const auto addi = [&](Id a, u32 b) { return ctx.OpIAdd(u32ty, a, imm(b)); };
 
     // Scratch for every subgroup of the workgroup, and the subgroup's index.
-    const Id scratch_type = ctx.TypeArray(u32ty, imm(SubgroupsPerWorkgroup(program) * SCRATCH_WORDS));
+    const Id scratch_type = ctx.TypeArray(u32ty, imm(SubgroupsPerWorkgroup(program) * scratch_words));
     const Id scratch = ctx.AddGlobalVariable(
         ctx.TypePointer(spv::StorageClass::Workgroup, scratch_type), spv::StorageClass::Workgroup);
     ctx.interfaces.push_back(scratch);
@@ -110,12 +119,24 @@ void DefineCooperativeMatrixFunction(EmitContext& ctx, const IR::Program& progra
 
     // Direct: D(16x8) = A(16x16) B(16x8) + C. Transposed: D^T(8x16) = B^T(8x16) A^T(16x16) + C^T,
     // which the transposed layouts give for free from the same scratch.
-    const Id type_a = transposed ? CooperativeMatrixType(ctx, f16, 8, 16, USE_MATRIX_A)
-                                 : CooperativeMatrixType(ctx, f16, 16, 16, USE_MATRIX_A);
-    const Id type_b = transposed ? CooperativeMatrixType(ctx, f16, 16, 16, USE_MATRIX_B)
-                                 : CooperativeMatrixType(ctx, f16, 16, 8, USE_MATRIX_B);
-    const Id type_c = transposed ? CooperativeMatrixType(ctx, f16, 8, 16, USE_ACCUMULATOR)
-                                 : CooperativeMatrixType(ctx, f16, 16, 8, USE_ACCUMULATOR);
+    // Halves: D_top(8x8) = A_top(8x16) B(16x8) + C_top, and the same for the bottom rows, with
+    // the accumulator in fp32.
+    Id type_a;
+    Id type_b;
+    Id type_c;
+    if (halves) {
+        type_a = CooperativeMatrixType(ctx, f16, 8, 16, USE_MATRIX_A);
+        type_b = CooperativeMatrixType(ctx, f16, 16, 8, USE_MATRIX_B);
+        type_c = CooperativeMatrixType(ctx, ctx.F32[1], 8, 8, USE_ACCUMULATOR);
+    } else if (transposed) {
+        type_a = CooperativeMatrixType(ctx, f16, 8, 16, USE_MATRIX_A);
+        type_b = CooperativeMatrixType(ctx, f16, 16, 16, USE_MATRIX_B);
+        type_c = CooperativeMatrixType(ctx, f16, 8, 16, USE_ACCUMULATOR);
+    } else {
+        type_a = CooperativeMatrixType(ctx, f16, 16, 16, USE_MATRIX_A);
+        type_b = CooperativeMatrixType(ctx, f16, 16, 8, USE_MATRIX_B);
+        type_c = CooperativeMatrixType(ctx, f16, 16, 8, USE_ACCUMULATOR);
+    }
     const Id row_major = imm(LAYOUT_ROW_MAJOR);
     const Id column_major = imm(LAYOUT_COLUMN_MAJOR);
 
@@ -145,7 +166,7 @@ void DefineCooperativeMatrixFunction(EmitContext& ctx, const IR::Program& progra
                                      imm(31));
     const Id g = ctx.OpShiftRightLogical(u32ty, lane, imm(2));
     const Id t = ctx.OpBitwiseAnd(u32ty, lane, imm(3));
-    const Id base = ctx.OpIMul(u32ty, ctx.OpLoad(u32ty, subgroup_id), imm(SCRATCH_WORDS));
+    const Id base = ctx.OpIMul(u32ty, ctx.OpLoad(u32ty, subgroup_id), imm(scratch_words));
     const Id a_base = addi(base, SCRATCH_A);
     const Id bt_base = addi(base, SCRATCH_BT);
     const Id c_base = addi(base, SCRATCH_C);
@@ -163,6 +184,41 @@ void DefineCooperativeMatrixFunction(EmitContext& ctx, const IR::Program& progra
     store(addi(a_row, 68), extract(matrix_a, 3));
     store(bt_row, extract(matrix_b, 0));
     store(addi(bt_row, 4), extract(matrix_b, 1));
+    if (halves) {
+        // C rows g and g+8 at n = 2t, 2t+1, widened to floats.
+        const Id f32ty = ctx.F32[1];
+        const Id c32_base = addi(base, SCRATCH_C32);
+        const Id c32_row = add(add(c32_base, ctx.OpShiftLeftLogical(u32ty, g, imm(3))),
+                               ctx.OpShiftLeftLogical(u32ty, t, imm(1)));
+        for (u32 row = 0; row < 2; ++row) {
+            const Id pair = ctx.OpUnpackHalf2x16(ctx.F32[2], extract(matrix_c, row));
+            for (u32 col = 0; col < 2; ++col) {
+                store(addi(c32_row, row * 64 + col),
+                      ctx.OpBitcast(u32ty, ctx.OpCompositeExtract(f32ty, pair, col)));
+            }
+        }
+        barrier();
+        const Id b = marker(MARKER_LOAD, type_b, {at(bt_base), column_major, imm(8)});
+        for (u32 half = 0; half < 2; ++half) {
+            const Id a = marker(MARKER_LOAD, type_a, {at(addi(a_base, half * 64)), row_major, imm(8)});
+            const Id c_at = at(addi(c32_base, half * 64));
+            const Id c = marker(MARKER_LOAD, type_c, {c_at, row_major, imm(8)});
+            const Id d = marker(MARKER_MUL_ADD, type_c, {a, b, c});
+            marker(MARKER_STORE, u32ty, {c_at, d, row_major, imm(8)});
+        }
+        barrier();
+        std::array<Id, 2> packed;
+        for (u32 row = 0; row < 2; ++row) {
+            const Id lo = ctx.OpBitcast(f32ty, load(addi(c32_row, row * 64)));
+            const Id hi = ctx.OpBitcast(f32ty, load(addi(c32_row, row * 64 + 1)));
+            packed[row] = ctx.OpPackHalf2x16(u32ty, ctx.OpCompositeConstruct(ctx.F32[2], lo, hi));
+        }
+        // The next evaluation's stores wait for every lane's reads.
+        barrier();
+        ctx.OpReturnValue(ctx.OpCompositeConstruct(ctx.U32[2], packed[0], packed[1]));
+        ctx.OpFunctionEnd();
+        return;
+    }
     store(c_row, extract(matrix_c, 0));
     store(addi(c_row, 32), extract(matrix_c, 1));
     barrier();
