@@ -159,7 +159,7 @@ add_library(
 
 set_source_files_properties(zbic_compression.cpp PROPERTIES
     INCLUDE_DIRECTORIES "${ZBIC_INCLUDE_DIR}"
-    COMPILE_OPTIONS "$<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-Wno-unused-function;-Wno-missing-declarations;-Wno-shadow>;$<$<CXX_COMPILER_ID:MSVC>:/wd4505;/wd5245>")
+    COMPILE_OPTIONS "$<$<CXX_COMPILER_ID:AppleClang,Clang,GNU,IntelLLVM>:-Wno-unused-function;-Wno-missing-declarations;-Wno-shadow>;$<$<CXX_COMPILER_ID:MSVC>:/wd4505;/wd5245>")
 
 if(WIN32)
     target_sources(common PRIVATE windows/timer_resolution.cpp
@@ -231,7 +231,8 @@ endif()
 
 if(CXX_CLANG)
     target_compile_options(common PRIVATE
-        $<$<COMPILE_LANGUAGE:C,CXX>:-fsized-deallocation>
+        # icx-cl rejects the flag; its Clang base already defaults to sized deallocation.
+        $<$<NOT:$<CXX_COMPILER_ID:IntelLLVM>>:-fsized-deallocation>
         $<$<COMPILE_LANGUAGE:C,CXX>:-Wunreachable-code-aggressive>)
     target_compile_definitions(
         common
