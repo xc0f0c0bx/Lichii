@@ -5,6 +5,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <algorithm>
+#include <string_view>
+#include <cstdlib>
 #include <atomic>
 #include <chrono>
 #include <cstddef>
@@ -437,6 +439,25 @@ bool DriverCachesPipelines(const Device& device) {
         return false;
     }
 }
+// EDEN_NX2_TENSOR=software keeps the shuffle HMMA for A/B runs against cooperative matrices.
+Shader::CooperativeMatrixShape CooperativeMatrixShapeFor(const Device& device) {
+    static const bool software = [] {
+        const char* const value = std::getenv("EDEN_NX2_TENSOR");
+        return value && std::string_view{value} == "software";
+    }();
+    // The fp16 matrices need shaderFloat16, which some Intel drivers lose above.
+    if (software || !device.IsFloat16Supported()) {
+        return Shader::CooperativeMatrixShape::None;
+    }
+    switch (device.GetCooperativeMatrixShape()) {
+    case Device::CooperativeMatrixShape::M16N8K16:
+        return Shader::CooperativeMatrixShape::M16N8K16;
+    case Device::CooperativeMatrixShape::M8N16K16:
+        return Shader::CooperativeMatrixShape::M8N16K16;
+    default:
+        return Shader::CooperativeMatrixShape::None;
+    }
+}
 } // Anonymous namespace
 
 PipelineCache::PipelineCache(Tegra::MaxwellDeviceMemoryManager& device_memory_,
@@ -568,6 +589,7 @@ PipelineCache::PipelineCache(Tegra::MaxwellDeviceMemoryManager& device_memory_,
         .has_broken_spirv_subgroup_shuffle = driver_id == VK_DRIVER_ID_QUALCOMM_PROPRIETARY,
         .has_broken_spirv_fragment_shuffle = driver_id == VK_DRIVER_ID_AMD_PROPRIETARY,
         .max_subgroup_size = device.GetMaxSubgroupSize(),
+        .cooperative_matrix_shape = CooperativeMatrixShapeFor(device),
         .has_broken_robust =
             device.IsNvidia() && device.GetNvidiaArch() <= NvidiaArchitecture::Arch_Pascal,
         .min_ssbo_alignment = device.GetStorageBufferAlignment(),

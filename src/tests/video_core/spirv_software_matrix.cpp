@@ -134,6 +134,40 @@ bool HasCapability(const std::vector<u32>& code, u32 capability) {
 
 }
 
+TEST_CASE("Cooperative matrix HMMA rewrites its markers into KHR instructions",
+          "[video_core][tensor][ampere]") {
+    for (const auto shape : {CooperativeMatrixShape::M16N8K16, CooperativeMatrixShape::M8N16K16}) {
+        TensorProgram tensor{2, 16};
+        tensor.profile.cooperative_matrix_shape = shape;
+        const auto code = tensor.Emit(shape == CooperativeMatrixShape::M16N8K16
+                                          ? "coopmat_direct"
+                                          : "coopmat_transposed");
+        REQUIRE(HasCapability(code, 6022)); // CooperativeMatrixKHR
+        REQUIRE(Instructions(code, 4456).size() == 3); // OpTypeCooperativeMatrixKHR: A, B, C
+        REQUIRE(Instructions(code, 4457).size() == 3); // loads
+        REQUIRE(Instructions(code, 4458).size() == 1); // store
+        REQUIRE(Instructions(code, 4459).size() == 1); // multiply-add, in the shared function
+        REQUIRE(Instructions(code, 12).empty());       // no marker OpExtInst left
+        REQUIRE(Instructions(code, 345).empty());      // no OpGroupNonUniformShuffle
+        // Every rewritten type names a subgroup scope and the shape's rows and columns.
+        for (const auto& type : Instructions(code, 4456)) {
+            REQUIRE(type.size() == 6);
+        }
+    }
+}
+
+TEST_CASE("Cooperative matrix HMMA stays on the software path outside compute",
+          "[video_core][tensor][ampere]") {
+    TensorProgram tensor{1, 16};
+    tensor.profile.cooperative_matrix_shape = CooperativeMatrixShape::M16N8K16;
+    tensor.program.stage = Stage::Fragment;
+    tensor.profile.supported_subgroup_stages = 1U << static_cast<u32>(Stage::Fragment);
+    const auto code = tensor.Emit();
+    REQUIRE(!HasCapability(code, 6022));
+    REQUIRE(Instructions(code, 4459).empty());
+    REQUIRE(!Instructions(code, 345).empty());
+}
+
 TEST_CASE("Software HMMA shares a bounded loop without tensor extensions", "[video_core][tensor][ampere]") {
     for (const u32 depth : {8U, 16U}) {
         TensorProgram single{1, depth};

@@ -12,6 +12,13 @@ namespace Shader {
 
 enum class Stage : u32;
 
+/// Subgroup-scope fp16 cooperative matrix shape (M x N x K) the host offers for HMMA.
+enum class CooperativeMatrixShape : u32 {
+    None,
+    M16N8K16, ///< The guest's own shape (NVIDIA, for one).
+    M8N16K16, ///< The transposed product (Intel Arc).
+};
+
 struct Profile {
     u32 supported_spirv{0x00010000};
     bool unified_descriptor_binding{};
@@ -106,6 +113,8 @@ struct Profile {
     bool has_broken_spirv_subgroup_shuffle{};
     bool has_broken_spirv_fragment_shuffle{};
     u32 max_subgroup_size{};
+    /// HMMA through VK_KHR_cooperative_matrix (compute only); None keeps the software path.
+    CooperativeMatrixShape cooperative_matrix_shape{};
 
     u32 gl_max_compute_smem_size{};
 

@@ -366,6 +366,18 @@ public:
     Id frag_depth{};
 
     std::array<Id, 2> software_matrix_functions{};
+    /// HMMA through cooperative matrices (emit_spirv_tensor.cpp). Sirit has no KHR cooperative
+    /// matrix instructions, so they are emitted as markers that PatchCooperativeMatrix rewrites.
+    Id cooperative_matrix_function{};
+    Id cooperative_matrix_marker{};
+    struct CooperativeMatrixType {
+        Id type;  ///< The placeholder array type
+        Id scope; ///< Constants for the rewritten OpTypeCooperativeMatrixKHR
+        Id rows;
+        Id columns;
+        Id use;
+    };
+    std::vector<CooperativeMatrixType> cooperative_matrix_types;
     std::vector<Id> interfaces;
     std::vector<std::pair<u32, spv::Op>> opcode_rewrites;
 
