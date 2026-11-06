@@ -232,7 +232,8 @@
         "package": "Opus",
         "patches": [
             "0001-disable-clang-runtime-neon.patch",
-            "0002-no-install.patch"
+            "0002-no-install.patch",
+            "0003-clang-cl-builtins.patch"
         ],
         "repo": "xiph/opus",
         "version": "a3f0ec02b3"
